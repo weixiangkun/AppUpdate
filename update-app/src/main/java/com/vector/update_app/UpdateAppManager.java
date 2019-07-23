@@ -15,6 +15,9 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.widget.Toast;
 
+import com.vector.update_app.listener.ExceptionHandler;
+import com.vector.update_app.listener.ExceptionHandlerHelper;
+import com.vector.update_app.listener.IUpdateDialogFragmentListener;
 import com.vector.update_app.service.DownloadService;
 import com.vector.update_app.utils.AppUpdateUtils;
 
@@ -31,6 +34,8 @@ public class UpdateAppManager {
     private final static String UPDATE_APP_KEY = "UPDATE_APP_KEY";
     private static final String TAG = UpdateAppManager.class.getSimpleName();
     private Map<String, String> mParams;
+    // 是否忽略默认参数，解决
+    private boolean mIgnoreDefParams = false;
     private Activity mActivity;
     private HttpManager mHttpManager;
     private String mUpdateUrl;
@@ -47,6 +52,7 @@ public class UpdateAppManager {
     private boolean mDismissNotificationProgress;
     private boolean mOnlyWifi;
     //自定义参数
+    private IUpdateDialogFragmentListener mUpdateDialogFragmentListener;
 
     private UpdateAppManager(Builder builder) {
         mActivity = builder.getActivity();
@@ -56,7 +62,10 @@ public class UpdateAppManager {
         mThemeColor = builder.getThemeColor();
         mTopPic = builder.getTopPic();
 
-        mAppKey = builder.getAppKey();
+        mIgnoreDefParams = builder.isIgnoreDefParams();
+        if(!mIgnoreDefParams) {
+            mAppKey = builder.getAppKey();
+        }
         mTargetPath = builder.getTargetPath();
         isPost = builder.isPost();
         mParams = builder.getParams();
@@ -64,6 +73,7 @@ public class UpdateAppManager {
         mShowIgnoreVersion = builder.isShowIgnoreVersion();
         mDismissNotificationProgress = builder.isDismissNotificationProgress();
         mOnlyWifi = builder.isOnlyWifi();
+        mUpdateDialogFragmentListener = builder.getUpdateDialogFragmentListener();
     }
 
     /**
@@ -175,9 +185,11 @@ public class UpdateAppManager {
                 bundle.putInt(TOP_IMAGE_KEY, mTopPic);
             }
 
-            UpdateDialogFragment updateDialogFragment = new UpdateDialogFragment();
-            updateDialogFragment.setArguments(bundle);
-            updateDialogFragment.show(((FragmentActivity) mActivity).getSupportFragmentManager(), "dialog");
+            UpdateDialogFragment
+                    .newInstance(bundle)
+                    .setUpdateDialogFragmentListener(mUpdateDialogFragmentListener)
+                    .show(((FragmentActivity) mActivity).getSupportFragmentManager(), "dialog");
+
         }
 
     }
@@ -216,14 +228,19 @@ public class UpdateAppManager {
 
         //拼接参数
         Map<String, String> params = new HashMap<String, String>();
-
-        params.put("appKey", mAppKey);
-        String versionName = AppUpdateUtils.getVersionName(mActivity);
-        if (versionName.endsWith("-debug")) {
-            versionName = versionName.substring(0, versionName.lastIndexOf('-'));
+        if(!mIgnoreDefParams) {
+            if (!TextUtils.isEmpty(mAppKey)) {
+                params.put("appKey", mAppKey);
+            }
+            String versionName = AppUpdateUtils.getVersionName(mActivity);
+            //过滤掉，debug 这情况
+            if (versionName.endsWith("-debug")) {
+                versionName = versionName.substring(0, versionName.lastIndexOf('-'));
+            }
+            if (!TextUtils.isEmpty(versionName)) {
+                params.put("version", versionName);
+            }
         }
-        params.put("version", versionName);
-
 
         //添加自定义参数，其实可以实现HttManager中添加
         if (mParams != null && !mParams.isEmpty()) {
@@ -246,7 +263,7 @@ public class UpdateAppManager {
                 @Override
                 public void onError(String error) {
                     callback.onAfter();
-                    callback.noNewApp();
+                    callback.noNewApp(error);
                 }
             });
         } else {
@@ -262,7 +279,7 @@ public class UpdateAppManager {
                 @Override
                 public void onError(String error) {
                     callback.onAfter();
-                    callback.noNewApp();
+                    callback.noNewApp(error);
                 }
             });
         }
@@ -316,11 +333,11 @@ public class UpdateAppManager {
                 //没有则进行下载，监听下载完成，弹出安装对话框
 
             } else {
-                callback.noNewApp();
+                callback.noNewApp("没有新版本");
             }
         } catch (Exception ignored) {
             ignored.printStackTrace();
-            callback.noNewApp();
+            callback.noNewApp(String.format("解析自定义更新配置消息出错[%s]", ignored.getMessage()));
         }
     }
 
@@ -346,11 +363,14 @@ public class UpdateAppManager {
         private boolean isPost;
         //6,自定义参数
         private Map<String, String> params;
+        // 是否忽略默认参数，解决
+        private boolean mIgnoreDefParams = false;
         //7,是否隐藏对话框下载进度条
-        private boolean mHideDialog;
+        private boolean mHideDialog = false;
         private boolean mShowIgnoreVersion;
         private boolean dismissNotificationProgress;
         private boolean mOnlyWifi;
+        private IUpdateDialogFragmentListener mUpdateDialogFragmentListener;
 
         public Map<String, String> getParams() {
             return params;
@@ -364,6 +384,19 @@ public class UpdateAppManager {
          */
         public Builder setParams(Map<String, String> params) {
             this.params = params;
+            return this;
+        }
+
+        public boolean isIgnoreDefParams() {
+            return mIgnoreDefParams;
+        }
+
+        /**
+         * @param ignoreDefParams 是否忽略默认的参数注入 appKey version
+         * @return Builder
+         */
+        public Builder setIgnoreDefParams(boolean ignoreDefParams) {
+            this.mIgnoreDefParams = ignoreDefParams;
             return this;
         }
 
@@ -487,6 +520,20 @@ public class UpdateAppManager {
             return this;
         }
 
+        public IUpdateDialogFragmentListener getUpdateDialogFragmentListener() {
+            return mUpdateDialogFragmentListener;
+        }
+
+        /**
+         *  设置默认的UpdateDialogFragment监听器
+         * @param updateDialogFragmentListener updateDialogFragmentListener 更新对话框关闭监听
+         * @return Builder
+         */
+        public Builder setUpdateDialogFragmentListener(IUpdateDialogFragmentListener updateDialogFragmentListener) {
+            this.mUpdateDialogFragmentListener = updateDialogFragmentListener;
+            return this;
+        }
+
         /**
          * @return 生成app管理器
          */
@@ -524,11 +571,11 @@ public class UpdateAppManager {
         /**
          * 是否隐藏对话框下载进度条
          *
-         * @param b 是否隐藏对话框下载进度条
+         *
          * @return Builder
          */
-        public Builder hideDialogOnDownloading(boolean b) {
-            mHideDialog = b;
+        public Builder hideDialogOnDownloading() {
+            mHideDialog = true;
             return this;
         }
 
@@ -575,6 +622,13 @@ public class UpdateAppManager {
         public boolean isOnlyWifi() {
             return mOnlyWifi;
         }
+
+        public Builder handleException(ExceptionHandler exceptionHandler) {
+            ExceptionHandlerHelper.init(exceptionHandler);
+            return this;
+        }
+
     }
 
 }
+

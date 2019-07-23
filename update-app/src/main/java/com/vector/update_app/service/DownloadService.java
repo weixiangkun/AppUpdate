@@ -1,6 +1,7 @@
 package com.vector.update_app.service;
 
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -29,6 +30,9 @@ public class DownloadService extends Service {
 
     private static final int NOTIFY_ID = 0;
     private static final String TAG = DownloadService.class.getSimpleName();
+    private static final String CHANNEL_ID = "app_update_id";
+    private static final CharSequence CHANNEL_NAME = "app_update_channel";
+
     public static boolean isRunning = false;
     private NotificationManager mNotificationManager;
     private DownloadBinder binder = new DownloadBinder();
@@ -49,6 +53,12 @@ public class DownloadService extends Service {
         context.startService(intent);
         context.bindService(intent, connection, Context.BIND_AUTO_CREATE);
         isRunning = true;
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        isRunning = false;
+        return super.onUnbind(intent);
     }
 
     @Override
@@ -77,7 +87,26 @@ public class DownloadService extends Service {
             return;
         }
 
-        mBuilder = new NotificationCompat.Builder(this);
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH);
+            //设置绕过免打扰模式
+//            channel.setBypassDnd(false);
+//            //检测是否绕过免打扰模式
+//            channel.canBypassDnd();
+//            //设置在锁屏界面上显示这条通知
+//            channel.setLockscreenVisibility(Notification.VISIBILITY_SECRET);
+//            channel.setLightColor(Color.GREEN);
+//            channel.setShowBadge(true);
+//            channel.setVibrationPattern(new long[]{100, 200, 300, 400, 500, 400, 300, 200, 400});
+            channel.enableVibration(false);
+            channel.enableLights(false);
+
+            mNotificationManager.createNotificationChannel(channel);
+        }
+
+
+        mBuilder = new NotificationCompat.Builder(this, CHANNEL_ID);
         mBuilder.setContentTitle("开始下载")
                 .setContentText("正在连接服务器")
                 .setSmallIcon(R.mipmap.lib_update_app_update_icon)
@@ -115,7 +144,8 @@ public class DownloadService extends Service {
 
     private void stop(String contentText) {
         if (mBuilder != null) {
-            mBuilder.setContentTitle(AppUpdateUtils.getAppName(DownloadService.this)).setContentText(contentText);
+            mBuilder.setContentTitle(AppUpdateUtils.getAppName(DownloadService.this))
+                    .setContentText(contentText);
             Notification notification = mBuilder.build();
             notification.flags = Notification.FLAG_AUTO_CANCEL;
             mNotificationManager.notify(NOTIFY_ID, notification);
@@ -166,6 +196,14 @@ public class DownloadService extends Service {
          * @param msg 异常信息
          */
         void onError(String msg);
+
+        /**
+         * 当应用处于前台，准备执行安装程序时候的回调，
+         *
+         * @param file 当前安装包
+         * @return false 默认 false ,当返回时 true 时，需要自己处理 ，前提条件是 onFinish 返回 false 。
+         */
+        boolean onInstallAppAndAppOnForeground(File file);
     }
 
     /**
@@ -183,6 +221,10 @@ public class DownloadService extends Service {
         public void start(UpdateAppBean updateApp, DownloadCallback callback) {
             //下载
             startDownload(updateApp, callback);
+        }
+
+        public void stop(String msg) {
+            DownloadService.this.stop(msg);
         }
     }
 
@@ -220,7 +262,7 @@ public class DownloadService extends Service {
                             .setProgress(100, rate, false)
                             .setWhen(System.currentTimeMillis());
                     Notification notification = mBuilder.build();
-                    notification.flags = Notification.FLAG_AUTO_CANCEL;
+                    notification.flags = Notification.FLAG_AUTO_CANCEL | Notification.FLAG_ONLY_ALERT_ONCE;
                     mNotificationManager.notify(NOTIFY_ID, notification);
                 }
 
@@ -260,7 +302,17 @@ public class DownloadService extends Service {
                 if (AppUpdateUtils.isAppOnForeground(DownloadService.this) || mBuilder == null) {
                     //App前台运行
                     mNotificationManager.cancel(NOTIFY_ID);
-                    AppUpdateUtils.installApp(DownloadService.this, file);
+
+                    if (mCallBack != null) {
+                        boolean temp = mCallBack.onInstallAppAndAppOnForeground(file);
+                        if (!temp) {
+                            AppUpdateUtils.installApp(DownloadService.this, file);
+                        }
+                    } else {
+                        AppUpdateUtils.installApp(DownloadService.this, file);
+                    }
+
+
                 } else {
                     //App后台运行
                     //更新参数,注意flags要使用FLAG_UPDATE_CURRENT

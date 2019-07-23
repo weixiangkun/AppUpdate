@@ -27,6 +27,15 @@
 
 
         <Button
+            android:id="@+id/btn_constraint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="16dp"
+            android:onClick="constraintUpdate"
+            android:text="强制更新"
+            />
+
+        <Button
             android:id="@+id/btn_diy_1"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -69,6 +78,15 @@
             android:layout_margin="16dp"
             android:onClick="silenceUpdateAppAndDiyDialog"
             android:text="更新App(静默下载+自定义对话框)"
+            />
+
+        <Button
+            android:id="@+id/btn_download"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="16dp"
+            android:onClick="onlyDownload"
+            android:text="只用下载功能"
             />
 
     </LinearLayout>

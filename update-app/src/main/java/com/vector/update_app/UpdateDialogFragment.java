@@ -1,6 +1,7 @@
 package com.vector.update_app;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.ComponentName;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -29,6 +30,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.vector.update_app.listener.ExceptionHandler;
+import com.vector.update_app.listener.ExceptionHandlerHelper;
+import com.vector.update_app.listener.IUpdateDialogFragmentListener;
 import com.vector.update_app.service.DownloadService;
 import com.vector.update_app.utils.AppUpdateUtils;
 import com.vector.update_app.utils.ColorUtil;
@@ -71,6 +75,23 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
     private int mDefaultPicResId = R.mipmap.lib_update_app_top_bg;
     private ImageView mTopIv;
     private TextView mIgnore;
+    private IUpdateDialogFragmentListener mUpdateDialogFragmentListener;
+    private DownloadService.DownloadBinder mDownloadBinder;
+    private Activity mActivity;
+
+    public UpdateDialogFragment setUpdateDialogFragmentListener(IUpdateDialogFragmentListener updateDialogFragmentListener) {
+        this.mUpdateDialogFragmentListener = updateDialogFragmentListener;
+        return this;
+    }
+
+
+    public static UpdateDialogFragment newInstance(Bundle args) {
+        UpdateDialogFragment fragment = new UpdateDialogFragment();
+        if (args != null) {
+            fragment.setArguments(args);
+        }
+        return fragment;
+    }
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -78,6 +99,10 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
         isShow = true;
 //        setStyle(DialogFragment.STYLE_NO_TITLE | DialogFragment.STYLE_NO_FRAME, 0);
         setStyle(DialogFragment.STYLE_NO_TITLE, R.style.UpdateAppDialog);
+
+
+        mActivity = getActivity();
+
 
 
     }
@@ -131,21 +156,21 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
 
     private void initView(View view) {
         //提示内容
-        mContentTextView = (TextView) view.findViewById(R.id.tv_update_info);
+        mContentTextView = view.findViewById(R.id.tv_update_info);
         //标题
-        mTitleTextView = (TextView) view.findViewById(R.id.tv_title);
+        mTitleTextView = view.findViewById(R.id.tv_title);
         //更新按钮
-        mUpdateOkButton = (Button) view.findViewById(R.id.btn_ok);
+        mUpdateOkButton = view.findViewById(R.id.btn_ok);
         //进度条
-        mNumberProgressBar = (NumberProgressBar) view.findViewById(R.id.npb);
+        mNumberProgressBar = view.findViewById(R.id.npb);
         //关闭按钮
-        mIvClose = (ImageView) view.findViewById(R.id.iv_close);
+        mIvClose = view.findViewById(R.id.iv_close);
         //关闭按钮+线 的整个布局
-        mLlClose = (LinearLayout) view.findViewById(R.id.ll_close);
+        mLlClose = view.findViewById(R.id.ll_close);
         //顶部图片
-        mTopIv = (ImageView) view.findViewById(R.id.iv_top);
+        mTopIv = view.findViewById(R.id.iv_top);
         //忽略
-        mIgnore = (TextView) view.findViewById(R.id.tv_ignore);
+        mIgnore = view.findViewById(R.id.tv_ignore);
 
     }
 
@@ -163,9 +188,10 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
 
         if (mUpdateApp != null) {
             //弹出对话框
-            String newVersion = mUpdateApp.getNewVersion();
-            String targetSize = mUpdateApp.getTargetSize();
-            String updateLog = mUpdateApp.getUpdateLog();
+            final String dialogTitle = mUpdateApp.getUpdateDefDialogTitle();
+            final String newVersion = mUpdateApp.getNewVersion();
+            final String targetSize = mUpdateApp.getTargetSize();
+            final String updateLog = mUpdateApp.getUpdateLog();
 
             String msg = "";
 
@@ -180,7 +206,7 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
             //更新内容
             mContentTextView.setText(msg);
             //标题
-            mTitleTextView.setText(String.format("是否升级到%s版本？", newVersion));
+            mTitleTextView.setText(TextUtils.isEmpty(dialogTitle) ? String.format("是否升级到%s版本？", newVersion) : dialogTitle);
             //强制更新
             if (mUpdateApp.isConstraint()) {
                 mLlClose.setVisibility(View.GONE);
@@ -273,13 +299,19 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
 
             } else {
                 installApp();
-                mUpdateOkButton.setVisibility(View.GONE);
+
             }
 
         } else if (i == R.id.iv_close) {
+            // TODO @WVector 这里是否要对UpdateAppBean的强制更新做处理？不会重合，当强制更新时，就不会显示这个按钮，也不会调这个方法。
 //            if (mNumberProgressBar.getVisibility() == View.VISIBLE) {
 //                Toast.makeText(getApplicationContext(), "后台更新app", Toast.LENGTH_LONG).show();
 //            }
+            cancelDownloadService();
+            if (mUpdateDialogFragmentListener != null) {
+                // 通知用户
+                mUpdateDialogFragmentListener.onUpdateNotifyDialogCancel(mUpdateApp);
+            }
             dismiss();
         } else if (i == R.id.tv_ignore) {
             AppUpdateUtils.saveIgnoreVersion(getActivity(), mUpdateApp.getNewVersion());
@@ -287,14 +319,27 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
         }
     }
 
+    public void cancelDownloadService() {
+        if (mDownloadBinder != null) {
+            // 标识用户已经点击了更新，之后点击取消
+            mDownloadBinder.stop("取消下载");
+        }
+    }
+
     private void installApp() {
         if (AppUpdateUtils.appIsDownloaded(mUpdateApp)) {
-            AppUpdateUtils.installApp(getActivity(), AppUpdateUtils.getAppFile(mUpdateApp));
+            AppUpdateUtils.installApp(UpdateDialogFragment.this, AppUpdateUtils.getAppFile(mUpdateApp));
             //安装完自杀
-            dismiss();
+            //如果上次是强制更新，但是用户在下载完，强制杀掉后台，重新启动app后，则会走到这一步，所以要进行强制更新的判断。
+            if (!mUpdateApp.isConstraint()) {
+                dismiss();
+            } else {
+                showInstallBtn(AppUpdateUtils.getAppFile(mUpdateApp));
+            }
         } else {
             downloadApp();
-            if (mUpdateApp.isHideDialog()) {
+            //这里的隐藏对话框会和强制更新冲突，导致强制更新失效，所以当强制更新时，不隐藏对话框。
+            if (mUpdateApp.isHideDialog() && !mUpdateApp.isConstraint()) {
                 dismiss();
             }
 
@@ -308,7 +353,6 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 //升级
                 installApp();
-                mUpdateOkButton.setVisibility(View.GONE);
             } else {
                 //提示，并且关闭
                 Toast.makeText(getActivity(), TIPS, Toast.LENGTH_LONG).show();
@@ -334,11 +378,14 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
         // 开始下载，监听下载进度，可以用对话框显示
         if (mUpdateApp != null) {
 
+            this.mDownloadBinder = binder;
+
             binder.start(mUpdateApp, new DownloadService.DownloadCallback() {
                 @Override
                 public void onStart() {
                     if (!UpdateDialogFragment.this.isRemoving()) {
                         mNumberProgressBar.setVisibility(View.VISIBLE);
+                        mUpdateOkButton.setVisibility(View.GONE);
                     }
                 }
 
@@ -355,11 +402,17 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
 
                 }
 
+                //TODO 这里的 onFinish 和 onInstallAppAndAppOnForeground 会有功能上的重合，后期考虑合并优化。
                 @Override
-                public boolean onFinish(File file) {
+                public boolean onFinish(final File file) {
                     if (!UpdateDialogFragment.this.isRemoving()) {
-                        dismissAllowingStateLoss();
+                        if (mUpdateApp.isConstraint()) {
+                            showInstallBtn(file);
+                        } else {
+                            dismissAllowingStateLoss();
+                        }
                     }
+                    //一般返回 true ，当返回 false 时，则下载，不安装，为静默安装使用。
                     return true;
                 }
 
@@ -369,22 +422,78 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
                         dismissAllowingStateLoss();
                     }
                 }
+
+                @Override
+                public boolean onInstallAppAndAppOnForeground(File file) {
+                    //这样做的目的是在跳转安装界面，可以监听到用户取消安装的动作;
+                    //activity.startActivityForResult(intent, REQ_CODE_INSTALL_APP);
+                    //但是如果 由DownloadService 跳转到安装界面，则监听失效。
+                    if (!mUpdateApp.isConstraint()) {
+                        dismiss();
+                    }
+                    if (mActivity != null) {
+                        AppUpdateUtils.installApp(mActivity, file);
+                        //返回 true ，自己处理。
+                        return true;
+                    } else {
+                        //返回 flase ，则由 DownloadService 跳转到安装界面。
+                        return false;
+                    }
+                }
             });
         }
     }
+
+    private void showInstallBtn(final File file) {
+        mNumberProgressBar.setVisibility(View.GONE);
+        mUpdateOkButton.setText("安装");
+        mUpdateOkButton.setVisibility(View.VISIBLE);
+        mUpdateOkButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                AppUpdateUtils.installApp(UpdateDialogFragment.this, file);
+            }
+        });
+    }
+
+
+//    @Override
+//    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+//        Log.e("", "对话框 requestCode = [" + requestCode + "], resultCode = [" + resultCode + "], data = [" + data + "]");
+//        switch (resultCode) {
+//            case Activity.RESULT_CANCELED:
+//                switch (requestCode){
+//                    // 得到通过UpdateDialogFragment默认dialog方式安装，用户取消安装的回调通知，以便用户自己去判断，比如这个更新如果是强制的，但是用户下载之后取消了，在这里发起相应的操作
+//                    case AppUpdateUtils.REQ_CODE_INSTALL_APP:
+//                        if (mUpdateApp.isConstraint()) {
+//                            if (AppUpdateUtils.appIsDownloaded(mUpdateApp)) {
+//                                AppUpdateUtils.installApp(UpdateDialogFragment.this, AppUpdateUtils.getAppFile(mUpdateApp));
+//                            }
+//                        }
+//                        break;
+//                }
+//                break;
+//
+//            default:
+//        }
+//    }
 
     @Override
     public void show(FragmentManager manager, String tag) {
 
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.JELLY_BEAN) {
-            if (manager.isDestroyed())
+            if (manager.isDestroyed()) {
                 return;
+            }
         }
 
         try {
             super.show(manager, tag);
         } catch (Exception e) {
-            e.printStackTrace();
+            ExceptionHandler exceptionHandler = ExceptionHandlerHelper.getInstance();
+            if (exceptionHandler != null) {
+                exceptionHandler.onException(e);
+            }
         }
     }
 
@@ -394,3 +503,4 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
         super.onDestroyView();
     }
 }
+

@@ -38,7 +38,7 @@
 <img src="https://raw.githubusercontent.com/WVector/AppUpdateDemo/master/image/example_06.png" width="1000">
 
 	
-[点击下载 Demo.apk](https://raw.githubusercontent.com/WVector/AppUpdateDemo/master/apk/app-debug.apk) 或扫描下面的二维码安装
+[点击下载 Demo.apk](https://raw.githubusercontent.com/WVector/AppUpdateDemo/master/apk/sample-debug.apk) 或扫描下面的二维码安装
 
 ![Demo apk文件二维](https://raw.githubusercontent.com/WVector/AppUpdateDemo/master/image/1498810770.png)
 
@@ -50,7 +50,7 @@
 
 ```gradle
 dependencies {
-    compile 'com.qianwen:update-app:3.3.8'
+    compile 'com.qianwen:update-app:3.5.2'
 }
 ```
 
@@ -61,7 +61,7 @@ dependencies {
 
 ```gradle
 dependencies {
-    compile 'com.qianwen:update-app-kotlin:1.1.0'
+    compile 'com.qianwen:update-app-kotlin:1.2.3'
 }
 ```
 
@@ -70,10 +70,11 @@ dependencies {
 
 ## 简单使用
 
-```java
+
 
 1,java方式
 
+```java
 	new UpdateAppManager
                 .Builder()
                 //当前Activity
@@ -84,11 +85,11 @@ dependencies {
                 .setHttpManager(new UpdateAppHttpUtil())
                 .build()
                 .update();
-
+```
 2,kotlin方式
 
+```kotlin
 	updateApp(mUpdateUrl, UpdateAppHttpUtil()).update()
-
 ```
 
 ## 详细说明
@@ -101,6 +102,77 @@ dependencies {
 ## 更新日志
 
 kotlin版本是依赖java版本的，所以java版本的问题kotlin自然修复
+
+
+v3.5.2
+
+	1，修复下载过程中，关闭对话框不能自动安装问题。
+
+v3.5.1
+
+	1，修复bug
+
+v3.5.0
+
+	1，优化强制更新 
+
+v3.4.8 
+
+	1,修复bug
+	
+v3.4.7 
+
+	1,优化 APP 安装的问题
+	
+v3.4.6 
+
+	1,优化 APP 安装的问题
+
+v3.4.5
+
+	1，增加全局异常捕获方法
+	
+	                .handleException(new ExceptionHandler() 						{
+                    @Override
+                    public void onException(Exception e) {
+
+                    }
+                })
+
+v3.4.4
+
+	1，修复bug
+[bug](https://github.com/WVector/AppUpdate/pull/68)
+
+v3.4.3
+
+	1，修复bug
+[bug](https://github.com/WVector/AppUpdate/pull/67)
+   
+v3.4.2
+
+	1,修复bug
+[bug](https://github.com/WVector/AppUpdate/pull/66)
+
+v3.4.1
+
+	1,给插件使用者更多的配置和开启一些钩子方便适配不同的业务需求
+	2,适配android8.0
+
+感谢[Jiiiiiin](https://github.com/Jiiiiiin)对项目的维护
+
+v3.4.0
+
+	1,修复  
+[issues#59](https://github.com/WVector/AppUpdate/issues/59)
+
+
+
+v3.3.9
+
+	1,适配android8.0的通知和安装未知来源的app
+
+感谢[typ0520](https://github.com/typ0520)对项目的维护
 
 v3.3.8
 
